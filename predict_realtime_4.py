@@ -1,12 +1,18 @@
 """
-predict_realtime_3.py  (Paced Isolated Mode - 3D)
+predict_realtime_4.py  (Auto-Trigger Mode - 3D)
 =============================================
-Demo nhận diện ngôn ngữ ký hiệu theo nhịp (Paced Signing).
-Hệ thống sẽ thu đủ N frames, dự đoán, sau đó "nghỉ" 1 khoảng thời gian
-để người dùng chuyển tay, giúp loại bỏ hoàn toàn nhiễu rác.
+Demo nhận diện ngôn ngữ ký hiệu tự động kích hoạt khi có bàn tay.
+
+Luồng hoạt động:
+- Nhấn SPACE để bật hệ thống (chuyển sang trạng thái SẴN SÀNG).
+- Khi SẴN SÀNG: Camera chạy nhưng KHÔNG vẽ keypoint, KHÔNG dự đoán.
+- Khi người dùng đưa tay lên (phát hiện có tay) -> Tự động chuyển sang ĐANG THU.
+- ĐANG THU: Vẽ keypoint, thu đủ 15 frames -> Dự đoán -> NGHỈ.
+- NGHỈ (1.5s): Chờ người dùng hạ tay xuống. Vẫn vẽ keypoint để tạo độ mượt.
+- Sau khi hết 1.5s VÀ rút tay khỏi màn hình -> Quay lại SẴN SÀNG.
 
 Cách dùng:
-  python predict_realtime_3.py --checkpoint checkpoints/exp1/best.pth
+  python predict_realtime_4.py --checkpoint checkpoints/exp1/best.pth
 """
 
 import argparse
@@ -172,7 +178,7 @@ def load_model(checkpoint_path: str, device):
     if model_type == "lstm_attn":
         model = KeypointLSTMAttention(
             num_classes=len(label_map),
-            input_dim=FEATURE_DIM,  # 225
+            input_dim=FEATURE_DIM,
             hidden_dim=args_saved.get("hidden_dim", 256),
             num_layers=args_saved.get("num_layers", 2),
             dropout=0.0,
@@ -182,12 +188,13 @@ def load_model(checkpoint_path: str, device):
     else:
         model = KeypointLSTM(
             num_classes=len(label_map),
-            input_dim=FEATURE_DIM,  # 225
+            input_dim=FEATURE_DIM,
             hidden_dim=args_saved.get("hidden_dim", 256),
             num_layers=args_saved.get("num_layers", 2),
             dropout=0.0,
             bidirectional=True,
         ).to(device)
+        
     model.load_state_dict(ckpt["model_state"])
     model.eval()
 
@@ -199,8 +206,8 @@ def load_model(checkpoint_path: str, device):
 def predict(kp_seq, model, device, num_frames=NUM_FRAMES):
     arr = np.stack(kp_seq, axis=0)                # (T, 75, 3)
     arr = arr.reshape(len(kp_seq), FEATURE_DIM)   # (T, 225)
-    arr = uniform_sample(arr, num_frames)          # (30, 225)
-    x   = torch.from_numpy(arr).unsqueeze(0).to(device)  # (1, 30, 225)
+    arr = uniform_sample(arr, num_frames)          # (15, 225)
+    x   = torch.from_numpy(arr).unsqueeze(0).to(device)  # (1, 15, 225)
 
     logits = model(x)
     probs  = F.softmax(logits, dim=1)[0]
@@ -237,21 +244,24 @@ def draw_hud(frame, sentence, state, progress, fps, show_ui):
     if state == "PAUSED":
         color = (0, 0, 255) # Đỏ
         state_txt = "TAM DUNG (Nhan Space de bat)"
+    elif state == "WAITING_HAND":
+        color = (255, 255, 0) # Cyan/Vàng
+        state_txt = "SAN SANG (Hay dua tay len...)"
     elif state == "RECORDING":
         color = (0, 255, 0) # Xanh lá
         state_txt = "DANG THU (Hay ky...)"
-    else:
+    else: # DELAY
         color = (100, 100, 100) # Xám
-        state_txt = "NGHI (Chuyen tay...)"
+        state_txt = "NGHI (Ha tay xuong...)"
 
     # Luôn hiển thị trạng thái TẠM DỪNG để cảnh báo.
-    # Còn ĐANG THU và NGHỈ (Xanh/Xám) thì sẽ bị ẩn nếu show_ui = False
+    # Còn các trạng thái lúc đang chạy thì sẽ bị ẩn nếu show_ui = False
     if state == "PAUSED" or show_ui:
         cv2.rectangle(frame, (0, 0), (w, h), color, 4)
         cv2.putText(frame, state_txt, (15, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
     
     # Progress bar cho RECORDING và DELAY (chỉ ẩn khi nhấn H)
-    if show_ui and state != "PAUSED":
+    if show_ui and state not in ["PAUSED", "WAITING_HAND"]:
         bar_h = 10
         bar_y = 55
         bar_w = 200
@@ -302,15 +312,15 @@ VIETNAMESE_MAP = {
 }
 
 def main():
-    parser = argparse.ArgumentParser(description="ISLR Demo — Paced Isolated Mode (3D)")
+    parser = argparse.ArgumentParser(description="ISLR Demo — Auto Trigger Mode (3D)")
     parser.add_argument("--checkpoint",  type=str, required=True, help="Đường dẫn file .pth")
     parser.add_argument("--camera",      type=int,   default=0)
     parser.add_argument("--record_frames", type=int, default=15,
-                        help="Số frame thu thập cho mỗi từ (Mặc định: 30)")
-    parser.add_argument("--delay_sec",   type=float, default=2,
-                        help="Số giây nghỉ giữa các từ (Mặc định: 1.5s)")
+                        help="Số frame thu thập cho mỗi từ (Mặc định: 15)")
+    parser.add_argument("--delay_sec",   type=float, default=1,
+                        help="Số giây nghỉ giữa các từ để hạ tay (Mặc định: 1.5s)")
     parser.add_argument("--conf_thresh", type=float, default=0.0,
-                        help="Ngưỡng tự tin tối thiểu (Mặc định: 0.6)")
+                        help="Ngưỡng tự tin tối thiểu (Mặc định: 0.0)")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -336,9 +346,9 @@ def main():
     prev_time = time.time()
 
     print(f"\n{'='*50}")
-    print(" BẮT ĐẦU CHẾ ĐỘ NHẬN DIỆN THEO NHỊP (PACED)")
-    print(" - Nhấn SPACE để BẬT/TẮT toàn bộ hệ thống")
-    print(" - Khi bật, hệ thống sẽ tự động Thu -> Nghỉ -> Thu")
+    print(" BẮT ĐẦU CHẾ ĐỘ NHẬN DIỆN KÍCH HOẠT THEO TAY (AUTO-TRIGGER)")
+    print(" - Nhấn SPACE để BẬT/TẮT hệ thống")
+    print(" - Khi bật, chỉ thu khi CÓ BÀN TAY xuất hiện trong khung hình")
     print(" - Nhấn H: Ẩn/Hiện giao diện")
     print(" - Nhấn C: Xóa câu hiện tại")
     print(" - Nhấn Q hoặc ESC: Thoát")
@@ -359,21 +369,28 @@ def main():
             progress = 0.0
             # KHÔNG trích xuất hay vẽ keypoint khi TẠM DỪNG để tiết kiệm CPU/GPU
         else:
-            # LUÔN LUÔN trích xuất và hiển thị keypoint khi hệ thống ĐÃ BẬT
-            # (giúp giữ luồng thị giác liên tục cho người xem)
+            # LUÔN LUÔN trích xuất keypoint khi hệ thống ĐÃ BẬT
             kp = extract_frame_kp(frame, pose_est, hand_est, face_est)
-            draw_keypoints(frame, kp)
+            
+            # Kiểm tra xem có bàn tay trong khung hình không
+            # Tọa độ bàn tay nằm từ index 33 đến 74.
+            # Nếu tọa độ x > 0 tức là Mediapipe nhận diện được ít nhất 1 điểm của bàn tay.
+            has_hand = np.any(kp[33:75, 0] > 0)
 
-            if state == "DELAY":
-                progress = max(0, (delay_end_time - curr_time) / args.delay_sec)
-                # Hết delay, tự động quay lại thu
-                if curr_time >= delay_end_time:
+            if state == "WAITING_HAND":
+                progress = 0.0
+                if has_hand:
+                    # Bàn tay xuất hiện -> Bắt đầu thu
                     state = "RECORDING"
-                    kp_buffer = []
-                    
+                    kp_buffer = [kp]
+                    draw_keypoints(frame, kp)
+                else:
+                    # Không có tay -> Không vẽ keypoint, màn hình trống
+                    pass
+
             elif state == "RECORDING":
-                # Chỉ đưa keypoint vào bộ nhớ dự đoán khi ĐANG THU
                 kp_buffer.append(kp)
+                draw_keypoints(frame, kp)
                 
                 progress = len(kp_buffer) / args.record_frames
                 
@@ -394,9 +411,18 @@ def main():
                     state = "DELAY"
                     delay_end_time = time.time() + args.delay_sec
 
+            elif state == "DELAY":
+                progress = max(0, (delay_end_time - curr_time) / args.delay_sec)
+                # Trong lúc hạ tay xuống, VẪN VẼ keypoint để demo trông liên tục
+                draw_keypoints(frame, kp)
+                
+                # Chuyển về trạng thái chờ KHI: Đã hết thời gian 1.5s VÀ Đã hạ tay khỏi khung hình
+                if curr_time >= delay_end_time and not has_hand:
+                    state = "WAITING_HAND"
+
         frame = draw_hud(frame, sentence, state, progress, fps, show_ui)
 
-        cv2.imshow("ISLR Paced Demo (3D)", frame)
+        cv2.imshow("ISLR Auto Trigger Demo (3D)", frame)
         key = cv2.waitKey(1) & 0xFF
         
         if key == ord("q") or key == 27: 
@@ -410,8 +436,8 @@ def main():
         elif key == 32:  # Phím SPACE
             system_active = not system_active
             if system_active:
-                print("[INFO] HỆ THỐNG BẬT - Bắt đầu chu kỳ thu.")
-                state = "RECORDING"
+                print("[INFO] HỆ THỐNG BẬT - Đang chờ bàn tay xuất hiện.")
+                state = "WAITING_HAND"
                 kp_buffer.clear()
             else:
                 print("[INFO] HỆ THỐNG TẠM DỪNG.")

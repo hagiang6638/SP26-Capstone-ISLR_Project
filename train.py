@@ -23,7 +23,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from dataset import ISLRDataset, build_label_map, KEYPOINTS_ROOT
-from model import KeypointLSTM
+from model import KeypointLSTM, KeypointLSTMAttention
 
 # ═══════════════════════════════════════════════════════════
 # Cấu hình mặc định
@@ -33,13 +33,18 @@ LOG_DIR        = Path(r"D:/CSLR/ISLR_Project/logs")
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Train ISLR KeypointLSTM")
+    parser = argparse.ArgumentParser(description="Train ISLR — LSTM or LSTM+Attention")
+    parser.add_argument("--model",       type=str,   default="lstm",
+                        choices=["lstm", "lstm_attn"],
+                        help="Kiến trúc model: 'lstm' (mặc định) hoặc 'lstm_attn' (LSTM+Attention)")
     parser.add_argument("--epochs",      type=int,   default=100)
     parser.add_argument("--batch_size",  type=int,   default=8)
     parser.add_argument("--lr",          type=float, default=1e-3)
     parser.add_argument("--hidden_dim",  type=int,   default=256)
     parser.add_argument("--num_layers",  type=int,   default=2)
     parser.add_argument("--dropout",     type=float, default=0.3)
+    parser.add_argument("--attn_dim",    type=int,   default=128,
+                        help="Chiều Attention Head (chỉ dùng khi --model lstm_attn)")
     parser.add_argument("--num_frames",  type=int,   default=15)
     parser.add_argument("--weight_decay",type=float, default=1e-4)
     parser.add_argument("--patience",    type=int,   default=20,
@@ -159,14 +164,27 @@ def main():
     )
 
     # ── Model ──
-    model = KeypointLSTM(
-        num_classes=num_classes,
-        input_dim=225,
-        hidden_dim=args.hidden_dim,
-        num_layers=args.num_layers,
-        dropout=args.dropout,
-        bidirectional=True,
-    ).to(device)
+    if args.model == "lstm_attn":
+        model = KeypointLSTMAttention(
+            num_classes=num_classes,
+            input_dim=225,
+            hidden_dim=args.hidden_dim,
+            num_layers=args.num_layers,
+            dropout=args.dropout,
+            bidirectional=True,
+            attn_dim=args.attn_dim,
+        ).to(device)
+        print(f"[INFO] Model: KeypointLSTMAttention (attn_dim={args.attn_dim})")
+    else:
+        model = KeypointLSTM(
+            num_classes=num_classes,
+            input_dim=225,
+            hidden_dim=args.hidden_dim,
+            num_layers=args.num_layers,
+            dropout=args.dropout,
+            bidirectional=True,
+        ).to(device)
+        print(f"[INFO] Model: KeypointLSTM")
 
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"[INFO] Tổng tham số: {total_params:,}")

@@ -4,7 +4,7 @@ from pathlib import Path
 from sklearn.metrics import classification_report, confusion_matrix
 
 from dataset import ISLRDataset, FEATURE_DIM
-from model import KeypointLSTM
+from model import KeypointLSTM, KeypointLSTMAttention
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate ISLR model and print classification report")
@@ -24,21 +24,35 @@ def main():
     args_saved = ckpt.get("args", {})
     
     # 2. Init model
-    model = KeypointLSTM(
-        num_classes=len(label_map),
-        input_dim=FEATURE_DIM,
-        hidden_dim=args_saved.get("hidden_dim", 256),
-        num_layers=args_saved.get("num_layers", 2),
-        dropout=0.0,
-        bidirectional=True
-    ).to(device)
+    model_type = args_saved.get("model", "lstm")
+    if model_type == "lstm_attn":
+        model = KeypointLSTMAttention(
+            num_classes=len(label_map),
+            input_dim=FEATURE_DIM,
+            hidden_dim=args_saved.get("hidden_dim", 256),
+            num_layers=args_saved.get("num_layers", 2),
+            dropout=0.0,
+            bidirectional=True,
+            attn_dim=args_saved.get("attn_dim", 128)
+        ).to(device)
+        print("[INFO] Đã khởi tạo model KeypointLSTMAttention từ checkpoint.")
+    else:
+        model = KeypointLSTM(
+            num_classes=len(label_map),
+            input_dim=FEATURE_DIM,
+            hidden_dim=args_saved.get("hidden_dim", 256),
+            num_layers=args_saved.get("num_layers", 2),
+            dropout=0.0,
+            bidirectional=True
+        ).to(device)
+        print("[INFO] Đã khởi tạo model KeypointLSTM từ checkpoint.")
     model.load_state_dict(ckpt["model_state"])
     model.eval()
     
     # 3. Load test dataset
     print(f"[INFO] Đang load tập test dataset...")
     try:
-        test_ds = ISLRDataset(split="test", label_map=label_map, augment=False)
+        test_ds = ISLRDataset(split="train", label_map=label_map, augment=False)
     except FileNotFoundError as e:
         print(f"[ERROR] {e}")
         return
