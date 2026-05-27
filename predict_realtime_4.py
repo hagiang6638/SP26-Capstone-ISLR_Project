@@ -303,12 +303,30 @@ def draw_hud(frame, sentence, state, progress, fps, show_ui):
 
 # Từ điển ánh xạ từ folder name (không dấu) sang Tiếng Việt hiển thị (có dấu)
 VIETNAMESE_MAP = {
-    "AN": "ĂN",
+    "1": "1",
+    "BA": "BA",
+    "BAI_TAP": "BÀI TẬP",
     "BAN": "BẠN",
+    "CAO": "CAO",
     "DI": "ĐI",
+    "DUA_HAU": "DƯA HẤU",
+    "EM": "EM",
+    "HOC": "HỌC",
+    "HOM_NAY": "HÔM NAY",
+    "HOM_QUA": "HÔM QUA",
+    "KHOE": "KHOẺ",
+    "LAM": "LÀM",
+    "ME": "MẸ",
     "MEO": "MÈO",
+    "MUA": "MUA",
+    "NGAY_MAI": "NGÀY MAI",
+    "NHA": "NHÀ",
+    "NONG": "NÓNG",
     "THICH": "THÍCH",
-    "TOI": "TÔI"
+    "THOI_TIET": "THỜI TIẾT",
+    "TO": "TO",
+    "TOI": "TÔI",
+    "XOAI": "XOÀI"
 }
 
 def main():
@@ -317,7 +335,7 @@ def main():
     parser.add_argument("--camera",      type=int,   default=0)
     parser.add_argument("--record_frames", type=int, default=15,
                         help="Số frame thu thập cho mỗi từ (Mặc định: 15)")
-    parser.add_argument("--delay_sec",   type=float, default=1,
+    parser.add_argument("--delay_sec",   type=float, default=1.5,
                         help="Số giây nghỉ giữa các từ để hạ tay (Mặc định: 1.5s)")
     parser.add_argument("--conf_thresh", type=float, default=0.0,
                         help="Ngưỡng tự tin tối thiểu (Mặc định: 0.0)")
